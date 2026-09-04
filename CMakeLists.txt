@@ -1257,6 +1257,42 @@ if(_POCL_SLEEF_FOR_VECMATH)
   endif()
 endif()
 
+# glibc version, for the extended libmvec table (glibc >= 2.35 exports vector
+# versions of most of libm; LLVM's VecFuncs.def only lists six of them).
+set(HOST_CPU_GLIBC_VERSION_NUM 0)
+if(ENABLE_HOST_CPU_VECTORIZE_LIBMVEC AND LIBMVEC AND NOT ("${LIBMVEC}" MATCHES "sleef"))
+  execute_process(COMMAND ldd --version OUTPUT_VARIABLE _ldd_out ERROR_QUIET)
+  if(_ldd_out MATCHES "([0-9]+)\\.([0-9]+)[ \n]*$" OR _ldd_out MATCHES "GLIBC ([0-9]+)\\.([0-9]+)")
+    math(EXPR HOST_CPU_GLIBC_VERSION_NUM "${CMAKE_MATCH_1} * 100 + ${CMAKE_MATCH_2}")
+    message(STATUS "glibc for vector math: ${CMAKE_MATCH_1}.${CMAKE_MATCH_2} (${HOST_CPU_GLIBC_VERSION_NUM})")
+  endif()
+endif()
+
+# Per-function deny lists (measured ULP over the OpenCL bound), one source of
+# truth for lib/CL/pocl_vecmath_deny.h and for the kernel-library swap.
+#  *_ENTRIES: LLVM scalar names (libm and intrinsic) for the TLI filter
+#  *_FUNCS:   OpenCL builtin names excluded from the Clang-builtin swap
+set(POCL_VECMATH_DENY_LIBMVEC_ENTRIES "logf;llvm.log.f32")
+set(POCL_VECMATH_DENY_LIBMVEC_FUNCS "log")
+set(POCL_VECMATH_DENY_LIBMVEC_NOTE "glibc 2.39, x86-64 AVX2, LLVM 22.1.8, 2026-09-04: float log 3.009 ULP vs 3 (CTS width 1 confirms)")
+set(POCL_VECMATH_DENY_SLEEF_ENTRIES "")
+set(POCL_VECMATH_DENY_SLEEF_FUNCS "")
+set(POCL_VECMATH_DENY_SLEEF_NOTE "SLEEF ${HOST_CPU_VECMATH_SLEEF_VERSION_NUM}: nothing measured over the bound")
+if(HOST_CPU_VECMATH_SLEEF_VERSION_NUM LESS 30800)
+  set(POCL_VECMATH_DENY_SLEEF_ENTRIES "pow;llvm.pow.f64")
+  set(POCL_VECMATH_DENY_SLEEF_FUNCS "pow")
+  set(POCL_VECMATH_DENY_SLEEF_NOTE "SLEEF < 3.8 (have ${HOST_CPU_VECMATH_SLEEF_VERSION_NUM}, 0 = unknown): double pow(-DBL_MAX, 1) returns -inf, SLEEF issue #600, fixed in 3.8")
+endif()
+foreach(LIB LIBMVEC SLEEF)
+  set(_c "")
+  foreach(E IN LISTS POCL_VECMATH_DENY_${LIB}_ENTRIES)
+    string(APPEND _c "    \"${E}\",\n")
+  endforeach()
+  set(POCL_VECMATH_DENY_${LIB}_C "${_c}")
+endforeach()
+configure_file("${CMAKE_SOURCE_DIR}/lib/CL/pocl_vecmath_deny.h.in"
+               "${CMAKE_BINARY_DIR}/pocl_vecmath_deny.h" @ONLY)
+
 # Record the paths to the SVML static libraries for the JIT to link against.
 set(HOST_CPU_SVML_LIBRARY "")
 set(HOST_CPU_IRC_LIBRARY "")

@@ -194,6 +194,8 @@
 
 /* MAJOR*10000 + MINOR*100 + PATCH of the SLEEF behind the vector math table; 0 = unknown */
 #define HOST_CPU_VECMATH_SLEEF_VERSION_NUM @HOST_CPU_VECMATH_SLEEF_VERSION_NUM@
+/* MAJOR*100 + MINOR of the glibc whose libmvec is used; 0 = unknown or not glibc */
+#define HOST_CPU_GLIBC_VERSION_NUM @HOST_CPU_GLIBC_VERSION_NUM@
 
 #cmakedefine HOST_CPU_LIBMVEC_LIBRARY_FALLBACK "@HOST_CPU_LIBMVEC_LIBRARY_FALLBACK@"
 
