@@ -1086,6 +1086,37 @@ int link(llvm::Module *Program, const llvm::Module *Lib, std::string &Log,
         "tanhf",  "tanh",  "exp10f", "exp10", "exp2f",  "exp2",
         "log2f",  "log2",  "log10f", "log10"};
 #define POCL_IS_LIBM_DECL(N) LibmDecls.contains(N)
+
+    // Kernels are compiled with -fno-builtin and the kernel library with
+    // -ffreestanding, so every function carries "no-builtins" and every
+    // call 'nobuiltin'. TargetLibraryInfo then disables all library
+    // knowledge for the function, and the vectorizer cannot map the libm
+    // calls above to their vector-library variants. Move the restriction
+    // from the function to the individual call sites: every call keeps
+    // 'nobuiltin' except the accepted libm calls, which become 'builtin'.
+    for (auto &F : *Program) {
+      if (F.isDeclaration())
+        continue;
+      bool NoBuiltinsFn = F.hasFnAttribute("no-builtins");
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          auto *CB = dyn_cast<CallBase>(&I);
+          if (!CB)
+            continue;
+          Function *Callee = CB->getCalledFunction();
+          if (CB->hasFnAttr("no-builtins"))
+            CB->removeFnAttr("no-builtins");
+          if (Callee && LibmDecls.contains(Callee->getName())) {
+            CB->removeFnAttr(Attribute::NoBuiltin);
+            CB->addFnAttr(Attribute::Builtin);
+          } else if (NoBuiltinsFn && !(Callee && Callee->isIntrinsic())) {
+            CB->addFnAttr(Attribute::NoBuiltin);
+          }
+        }
+      }
+      if (NoBuiltinsFn)
+        F.removeFnAttr("no-builtins");
+    }
 #else
 #define POCL_IS_LIBM_DECL(N) false
 #endif
