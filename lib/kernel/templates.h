@@ -89,6 +89,38 @@
 #endif
 
 
+// 3-wide overloads of swapped builtins go through the 4-wide overload with a
+// zero in the padding lane: the SLP vectorizer then forms one 4-lane vector
+// library call, where three scalar calls would stay scalar libm calls and
+// lose the library (and, on x86, glibc's scalar cbrt/tgamma accuracy).
+// Two empty asm statements keep the padding lane real for the optimizer: the
+// first makes the padded input opaque (a constant pad would be folded, a
+// copied lane would be merged with its twin), the second consumes the whole
+// 4-lane result so the fourth call is not deleted as unused. With both, the
+// SLP vectorizer sees four live scalar calls and forms one 4-lane library
+// call. Without them the overload compiles back to three scalar libm calls.
+#define IMPLEMENT_BUILTIN_V3_VIA_V4_V(NAME, V3, V4, ZERO)   \
+  V3 _CL_OVERLOADABLE                                       \
+  NAME(V3 a)                                                \
+  {                                                         \
+    V4 v = (V4)(a, ZERO);                                   \
+    __asm__ __volatile__("" : "+m"(v));                     \
+    V4 r = NAME(v);                                         \
+    __asm__ __volatile__("" : : "m"(r));                    \
+    return r.xyz;                                           \
+  }
+#define IMPLEMENT_BUILTIN_V3_VIA_V4_VV(NAME, V3, V4, ZERO)  \
+  V3 _CL_OVERLOADABLE                                       \
+  NAME(V3 a, V3 b)                                          \
+  {                                                         \
+    V4 va = (V4)(a, ZERO);                                  \
+    V4 vb = (V4)(b, ZERO);                                  \
+    __asm__ __volatile__("" : "+m"(va), "+m"(vb));          \
+    V4 r = NAME(va, vb);                                    \
+    __asm__ __volatile__("" : : "m"(r));                    \
+    return r.xyz;                                           \
+  }
+
 #define IMPLEMENT_BUILTIN_V_V(NAME, VTYPE, EVAL)        \
   VTYPE _CL_OVERLOADABLE                                \
   NAME(VTYPE a)                                         \
@@ -113,8 +145,8 @@
     return __builtin_##NAME##f(a);                      \
   }                                                     \
   IMPLEMENT_BUILTIN_V_V(NAME, float2  , NAME1_2(__builtin_##NAME##f))          \
-  IMPLEMENT_BUILTIN_V_V(NAME, float3  , NAME1_3(__builtin_##NAME##f))          \
   IMPLEMENT_BUILTIN_V_V(NAME, float4  , NAME1_4(__builtin_##NAME##f))          \
+  IMPLEMENT_BUILTIN_V3_VIA_V4_V(NAME, float3, float4, 0.0f)                    \
   IMPLEMENT_BUILTIN_V_V(NAME, float8  , NAME1_8(__builtin_##NAME##f))          \
   IMPLEMENT_BUILTIN_V_V(NAME, float16 , NAME1_16(__builtin_##NAME##f))         \
   __IF_FP64(                                            \
@@ -124,8 +156,8 @@
     return __builtin_##NAME(a);                         \
   }                                                     \
   IMPLEMENT_BUILTIN_V_V(NAME, double2 , NAME1_2(__builtin_##NAME))          \
-  IMPLEMENT_BUILTIN_V_V(NAME, double3 , NAME1_3(__builtin_##NAME))          \
   IMPLEMENT_BUILTIN_V_V(NAME, double4 , NAME1_4(__builtin_##NAME))          \
+  IMPLEMENT_BUILTIN_V3_VIA_V4_V(NAME, double3, double4, 0.0)                \
   IMPLEMENT_BUILTIN_V_V(NAME, double8 , NAME1_8(__builtin_##NAME))          \
   IMPLEMENT_BUILTIN_V_V(NAME, double16, NAME1_16(__builtin_##NAME)))
 
@@ -154,8 +186,8 @@
     return __builtin_##NAME##f(a, b);                     \
   }                                                       \
   IMPLEMENT_BUILTIN_V_VV(NAME, float2  , NAME2_2(NAME))   \
-  IMPLEMENT_BUILTIN_V_VV(NAME, float3  , NAME2_3(NAME))   \
   IMPLEMENT_BUILTIN_V_VV(NAME, float4  , NAME2_4(NAME))   \
+  IMPLEMENT_BUILTIN_V3_VIA_V4_VV(NAME, float3, float4, 0.0f) \
   IMPLEMENT_BUILTIN_V_VV(NAME, float8  , NAME2_8(NAME))   \
   IMPLEMENT_BUILTIN_V_VV(NAME, float16 , NAME2_16(NAME))  \
   __IF_FP64(                                              \
@@ -165,8 +197,8 @@
     return __builtin_##NAME(a, b);                        \
   }                                                       \
   IMPLEMENT_BUILTIN_V_VV(NAME, double2 , NAME2_2(NAME))   \
-  IMPLEMENT_BUILTIN_V_VV(NAME, double3 , NAME2_3(NAME))   \
   IMPLEMENT_BUILTIN_V_VV(NAME, double4 , NAME2_4(NAME))   \
+  IMPLEMENT_BUILTIN_V3_VIA_V4_VV(NAME, double3, double4, 0.0) \
   IMPLEMENT_BUILTIN_V_VV(NAME, double8 , NAME2_8(NAME))   \
   IMPLEMENT_BUILTIN_V_VV(NAME, double16, NAME2_16(NAME)))
 
