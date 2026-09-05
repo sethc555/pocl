@@ -443,8 +443,11 @@ pocl.
  example ``logf,llvm.log.f32``) removed from, or added back to, the vector
  math library table the CPU device hands to LLVM, on top of the built-in
  per-library deny list. A denied function keeps its scalar implementation.
- Only meaningful for builds with ``ENABLE_HOST_CPU_VECTORIZE_*``; intended
- for measuring a library, not for production use.
+ This filters the table the loop vectorizer uses for scalar-typed kernels;
+ the vector overloads of explicit vector types (``float4`` and friends)
+ call the library directly on x86-64 and follow the configure-time list
+ only. Only meaningful for builds with ``ENABLE_HOST_CPU_VECTORIZE_*``;
+ intended for measuring a library, not for production use.
 
 - **POCL_VECTORIZER_REMARKS**
 

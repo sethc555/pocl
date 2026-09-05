@@ -301,10 +301,24 @@ if(ENABLE_HOST_CPU_VECTORIZE_BUILTINS)
   set(VECMATH_SWAP ${VECMATH_SWAP_EXACT} ${VECMATH_SWAP_TRANSCENDENTAL})
   message(STATUS "CPU kernel library: Clang-builtin swap for ${VECMATH_SWAP_TRANSCENDENTAL}")
 
+  # With a libmvec-ABI library on x86 the transcendentals' vector overloads
+  # call the library directly (host/veclib_direct.cl); SVML and the AArch64
+  # SLEEF build keep the per-element Clang-builtin files.
+  set(VECMATH_DIRECT OFF)
+  if(ENABLE_HOST_CPU_VECTORIZE_LIBMVEC AND LIBMVEC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    set(VECMATH_DIRECT ON)
+  endif()
   foreach(F IN LISTS VECMATH_SWAP)
     list(REMOVE_ITEM SOURCES_WITH_SLEEF "libclc-pocl/${F}.cl" "sleef-pocl/${F}.cl")
+    if(VECMATH_DIRECT AND (F IN_LIST VECMATH_SWAP_TRANSCENDENTAL))
+      continue()
+    endif()
     list(APPEND SOURCES_WITH_SLEEF "${F}.cl")
   endforeach()
+  if(VECMATH_DIRECT)
+    list(APPEND SOURCES_WITH_SLEEF "host/veclib_direct.cl")
+    message(STATUS "CPU kernel library: vector overloads call the vector library directly")
+  endif()
   # Helpers that conflict with the generic versions of the swapped builtins.
   list(REMOVE_ITEM SOURCES_WITH_SLEEF libclc-pocl/pocl_fma.cl sleef-pocl/scalars.cl)
 endif()  # ENABLE_HOST_CPU_VECTORIZE_BUILTINS

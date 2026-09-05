@@ -1071,7 +1071,7 @@ int link(llvm::Module *Program, const llvm::Module *Lib, std::string &Log,
       "atan2f", "atan2", "coshf",  "cosh",  "sinhf",  "sinh",
       "tanhf",  "tanh",  "exp10f", "exp10", "exp2f",  "exp2",
       "log2f",  "log2",  "log10f", "log10"};
-#define POCL_IS_LIBM_DECL(N) LibmDecls.contains(N)
+#define POCL_IS_LIBM_DECL(N) (LibmDecls.contains(N) || llvm::StringRef(N).starts_with("_ZGV"))
 
   // Kernels are compiled with -fno-builtin and the kernel library with
   // -ffreestanding, so every function carries "no-builtins" and every

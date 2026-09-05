@@ -2243,3 +2243,158 @@
   IMPLEMENT_FP16_EXPR_V_VVV (NAME, half4, BUILTIN (a, b, c))                  \
   IMPLEMENT_FP16_EXPR_V_VVV (NAME, half8, BUILTIN (a, b, c))                  \
   IMPLEMENT_FP16_EXPR_V_VVV (NAME, half16, BUILTIN (a, b, c))
+
+// Half-only variants of the builtin swap, for functions whose float and
+// double overloads are provided elsewhere (the direct vector-library calls).
+#define DEFINE_BUILTIN_V_V_F16ONLY(NAME)                \
+  __IF_FP16(                                            \
+  half _CL_OVERLOADABLE                                 \
+  NAME(half a)                                          \
+  {                                                     \
+    return __builtin_##NAME##f16(a);                    \
+  }                                                     \
+  IMPLEMENT_BUILTIN_V_V(NAME, half2   , NAME1_2(__builtin_##NAME##f16))          \
+  IMPLEMENT_BUILTIN_V_V(NAME, half3   , NAME1_3(__builtin_##NAME##f16))          \
+  IMPLEMENT_BUILTIN_V_V(NAME, half4   , NAME1_4(__builtin_##NAME##f16))          \
+  IMPLEMENT_BUILTIN_V_V(NAME, half8   , NAME1_8(__builtin_##NAME##f16))          \
+  IMPLEMENT_BUILTIN_V_V(NAME, half16 , NAME1_16(__builtin_##NAME##f16)))
+#define DEFINE_BUILTIN_V_VV_F16ONLY(NAME)               \
+  __IF_FP16(                                              \
+  half _CL_OVERLOADABLE                                   \
+  NAME(half a, half b)                                    \
+  {                                                       \
+    return __builtin_##NAME##f16(a, b);                   \
+  }                                                       \
+  IMPLEMENT_BUILTIN_V_VV(NAME, half2   , NAME2_2(NAME))   \
+  IMPLEMENT_BUILTIN_V_VV(NAME, half3   , NAME2_3(NAME))   \
+  IMPLEMENT_BUILTIN_V_VV(NAME, half4   , NAME2_4(NAME))   \
+  IMPLEMENT_BUILTIN_V_VV(NAME, half8   , NAME2_8(NAME))   \
+  IMPLEMENT_BUILTIN_V_VV(NAME, half16  , NAME2_16(NAME)))
+
+// Direct calls into the vector math library (glibc libmvec or SLEEF's
+// libmvec-ABI build) for explicit vector types. The scalar overload keeps
+// the Clang builtin so scalar-typed kernels go through the loop vectorizer
+// and its library mapping as before; the vector overloads call the library
+// entry point of the type's width, so the SLP vectorizer is not involved,
+// width 3 rides on the 4-lane call, and nothing falls back to scalar libm.
+// The entry points are declared const (_CL_READNONE): they touch no memory
+// and set no errno, so identical calls can be merged or hoisted and an
+// unused result dropped, as with the Clang builtins they replace.
+// Which functions get these overloads is decided at configure time
+// (POCL_VECMATH_SWAP_<f>, the library table minus the deny list); the
+// run-time POCL_VECMATH_DENY/ALLOW override filters only the loop
+// vectorizer's table and does not reach these overloads.
+// The pad lanes of the 2- and 3-wide overloads copy a real lane: the
+// library computes lanes independently, but a special input in any lane
+// (pow(0, 0), acosh(0), hypot(0, 0)) sends the whole call through its
+// scalar special-case path, which made float3 pow twice as slow as the
+// per-element version with a zero pad. The call is opaque, so the copied
+// lane cannot be folded or eliminated the way a padded builtin call was.
+// The 8-lane float and 4-lane double variants (_ZGVd*) are used when the
+// kernel-library variant is compiled for an AVX2 target (__AVX2__); the
+// variants for older targets make two 4-lane float or 2-lane double calls
+// instead, so a host without AVX2 never sees an AVX2 entry point.
+// The library symbols are pasted in the outer macro: the kernel library
+// renames builtins (sin -> _cl_sin) with macros, and a name passed through
+// a nested macro would be renamed before pasting.
+#ifdef __AVX2__
+#define _VECLIB_IMPL_V_V(NAME, BF, BD, SF4, SD2, SF8, SD4)                   \
+  float4 _CL_READNONE SF4(float4); float8 _CL_READNONE SF8(float8);                                   \
+  __IF_FP64(double2 _CL_READNONE SD2(double2); double4 _CL_READNONE SD4(double4);)                    \
+  float _CL_OVERLOADABLE NAME(float a) { return BF(a); }                    \
+  float2 _CL_OVERLOADABLE NAME(float2 a)                                   \
+  { return SF4((float4)(a, a)).xy; }                              \
+  float3 _CL_OVERLOADABLE NAME(float3 a) { return SF4((float4)(a, a.x)).xyz; } \
+  float4 _CL_OVERLOADABLE NAME(float4 a) { return SF4(a); }                 \
+  float8 _CL_OVERLOADABLE NAME(float8 a) { return SF8(a); }                 \
+  float16 _CL_OVERLOADABLE NAME(float16 a)                                 \
+  { return (float16)(SF8(a.lo), SF8(a.hi)); }                              \
+  __IF_FP64(                                                                \
+  double _CL_OVERLOADABLE NAME(double a) { return BD(a); }                  \
+  double2 _CL_OVERLOADABLE NAME(double2 a) { return SD2(a); }               \
+  double3 _CL_OVERLOADABLE NAME(double3 a) { return SD4((double4)(a, a.x)).xyz; } \
+  double4 _CL_OVERLOADABLE NAME(double4 a) { return SD4(a); }               \
+  double8 _CL_OVERLOADABLE NAME(double8 a)                                 \
+  { return (double8)(SD4(a.lo), SD4(a.hi)); }                              \
+  double16 _CL_OVERLOADABLE NAME(double16 a)                               \
+  { return (double16)(NAME(a.lo), NAME(a.hi)); })
+#define _VECLIB_IMPL_V_VV(NAME, BF, BD, SF4, SD2, SF8, SD4)                  \
+  float4 _CL_READNONE SF4(float4, float4); float8 _CL_READNONE SF8(float8, float8);                   \
+  __IF_FP64(double2 _CL_READNONE SD2(double2, double2); double4 _CL_READNONE SD4(double4, double4);)  \
+  float _CL_OVERLOADABLE NAME(float a, float b) { return BF(a, b); }        \
+  float2 _CL_OVERLOADABLE NAME(float2 a, float2 b)                         \
+  { return SF4((float4)(a, a), (float4)(b, b)).xy; }     \
+  float3 _CL_OVERLOADABLE NAME(float3 a, float3 b)                         \
+  { return SF4((float4)(a, a.x), (float4)(b, b.x)).xyz; }                \
+  float4 _CL_OVERLOADABLE NAME(float4 a, float4 b) { return SF4(a, b); }    \
+  float8 _CL_OVERLOADABLE NAME(float8 a, float8 b) { return SF8(a, b); }    \
+  float16 _CL_OVERLOADABLE NAME(float16 a, float16 b)                      \
+  { return (float16)(SF8(a.lo, b.lo), SF8(a.hi, b.hi)); }                  \
+  __IF_FP64(                                                                \
+  double _CL_OVERLOADABLE NAME(double a, double b) { return BD(a, b); }     \
+  double2 _CL_OVERLOADABLE NAME(double2 a, double2 b) { return SD2(a, b); } \
+  double3 _CL_OVERLOADABLE NAME(double3 a, double3 b)                      \
+  { return SD4((double4)(a, a.x), (double4)(b, b.x)).xyz; }                \
+  double4 _CL_OVERLOADABLE NAME(double4 a, double4 b) { return SD4(a, b); } \
+  double8 _CL_OVERLOADABLE NAME(double8 a, double8 b)                      \
+  { return (double8)(SD4(a.lo, b.lo), SD4(a.hi, b.hi)); }                  \
+  double16 _CL_OVERLOADABLE NAME(double16 a, double16 b)                   \
+  { return (double16)(NAME(a.lo, b.lo), NAME(a.hi, b.hi)); })
+#else
+#define _VECLIB_IMPL_V_V(NAME, BF, BD, SF4, SD2, SF8, SD4)                   \
+  float4 _CL_READNONE SF4(float4);                                                       \
+  __IF_FP64(double2 _CL_READNONE SD2(double2);)                                          \
+  float _CL_OVERLOADABLE NAME(float a) { return BF(a); }                    \
+  float2 _CL_OVERLOADABLE NAME(float2 a)                                   \
+  { return SF4((float4)(a, a)).xy; }                              \
+  float3 _CL_OVERLOADABLE NAME(float3 a) { return SF4((float4)(a, a.x)).xyz; } \
+  float4 _CL_OVERLOADABLE NAME(float4 a) { return SF4(a); }                 \
+  float8 _CL_OVERLOADABLE NAME(float8 a)                                   \
+  { return (float8)(SF4(a.lo), SF4(a.hi)); }                               \
+  float16 _CL_OVERLOADABLE NAME(float16 a)                                 \
+  { return (float16)(NAME(a.lo), NAME(a.hi)); }                            \
+  __IF_FP64(                                                                \
+  double _CL_OVERLOADABLE NAME(double a) { return BD(a); }                  \
+  double2 _CL_OVERLOADABLE NAME(double2 a) { return SD2(a); }               \
+  double3 _CL_OVERLOADABLE NAME(double3 a)                                 \
+  { double4 v = (double4)(a, a.x); return ((double4)(SD2(v.lo), SD2(v.hi))).xyz; } \
+  double4 _CL_OVERLOADABLE NAME(double4 a)                                 \
+  { return (double4)(SD2(a.lo), SD2(a.hi)); }                              \
+  double8 _CL_OVERLOADABLE NAME(double8 a)                                 \
+  { return (double8)(NAME(a.lo), NAME(a.hi)); }                            \
+  double16 _CL_OVERLOADABLE NAME(double16 a)                               \
+  { return (double16)(NAME(a.lo), NAME(a.hi)); })
+#define _VECLIB_IMPL_V_VV(NAME, BF, BD, SF4, SD2, SF8, SD4)                  \
+  float4 _CL_READNONE SF4(float4, float4);                                               \
+  __IF_FP64(double2 _CL_READNONE SD2(double2, double2);)                                 \
+  float _CL_OVERLOADABLE NAME(float a, float b) { return BF(a, b); }        \
+  float2 _CL_OVERLOADABLE NAME(float2 a, float2 b)                         \
+  { return SF4((float4)(a, a), (float4)(b, b)).xy; }     \
+  float3 _CL_OVERLOADABLE NAME(float3 a, float3 b)                         \
+  { return SF4((float4)(a, a.x), (float4)(b, b.x)).xyz; }                \
+  float4 _CL_OVERLOADABLE NAME(float4 a, float4 b) { return SF4(a, b); }    \
+  float8 _CL_OVERLOADABLE NAME(float8 a, float8 b)                         \
+  { return (float8)(SF4(a.lo, b.lo), SF4(a.hi, b.hi)); }                   \
+  float16 _CL_OVERLOADABLE NAME(float16 a, float16 b)                      \
+  { return (float16)(NAME(a.lo, b.lo), NAME(a.hi, b.hi)); }                \
+  __IF_FP64(                                                                \
+  double _CL_OVERLOADABLE NAME(double a, double b) { return BD(a, b); }     \
+  double2 _CL_OVERLOADABLE NAME(double2 a, double2 b) { return SD2(a, b); } \
+  double3 _CL_OVERLOADABLE NAME(double3 a, double3 b)                      \
+  { double4 va = (double4)(a, a.x); double4 vb = (double4)(b, b.x);        \
+    return ((double4)(SD2(va.lo, vb.lo), SD2(va.hi, vb.hi))).xyz; }        \
+  double4 _CL_OVERLOADABLE NAME(double4 a, double4 b)                      \
+  { return (double4)(SD2(a.lo, b.lo), SD2(a.hi, b.hi)); }                  \
+  double8 _CL_OVERLOADABLE NAME(double8 a, double8 b)                      \
+  { return (double8)(NAME(a.lo, b.lo), NAME(a.hi, b.hi)); }                \
+  double16 _CL_OVERLOADABLE NAME(double16 a, double16 b)                   \
+  { return (double16)(NAME(a.lo, b.lo), NAME(a.hi, b.hi)); })
+#endif
+#define DEFINE_VECLIB_V_V(NAME)                                             \
+  _VECLIB_IMPL_V_V(NAME, __builtin_##NAME##f, __builtin_##NAME,              \
+                   _ZGVbN4v_##NAME##f, _ZGVbN2v_##NAME,                     \
+                   _ZGVdN8v_##NAME##f, _ZGVdN4v_##NAME)
+#define DEFINE_VECLIB_V_VV(NAME)                                            \
+  _VECLIB_IMPL_V_VV(NAME, __builtin_##NAME##f, __builtin_##NAME,             \
+                    _ZGVbN4vv_##NAME##f, _ZGVbN2vv_##NAME,                  \
+                    _ZGVdN8vv_##NAME##f, _ZGVdN4vv_##NAME)
