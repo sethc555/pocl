@@ -1,0 +1,6 @@
+CHECK: @_pocl_kernel_direct_float3_workgroup
+CHECK-NOT: @llvm.sin.
+CHECK-NOT: @sinf(
+CHECK: call <4 x float> @_ZGVbN4v_sinf(
+CHECK-NOT: @llvm.sin.
+CHECK-NOT: @sinf(

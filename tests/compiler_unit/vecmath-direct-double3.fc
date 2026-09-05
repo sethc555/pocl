@@ -1,0 +1,6 @@
+CHECK: @_pocl_kernel_direct_double3_workgroup
+CHECK-NOT: @sin(
+CHECK-NOT: @llvm.sin.
+CHECK: call <{{[24]}} x double> @_ZGV{{[bd]}}N{{[24]}}v_sin(
+CHECK-NOT: @sin(
+CHECK-NOT: @llvm.sin.

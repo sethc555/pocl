@@ -77,3 +77,10 @@ if(ENABLE_HOST_CPU_VECTORIZE_LIBMVEC)
   add_llvm_check(OPENCLC_NAME vecmath-loopvec-libcall)
   add_llvm_check(OPENCLC_NAME vecmath-deny-env ENVIRONMENT "POCL_VECMATH_DENY=sinf,llvm.sin.f32")
 endif()
+
+# Explicit vector types call the vector library directly (x86-64 with a
+# libmvec-ABI library, see lib/kernel/host/veclib_direct.cl).
+if(ENABLE_HOST_CPU_VECTORIZE_LIBMVEC AND LIBMVEC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+  add_llvm_check(OPENCLC_NAME vecmath-direct-float3)
+  add_llvm_check(OPENCLC_NAME vecmath-direct-double3)
+endif()
