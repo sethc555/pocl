@@ -2111,6 +2111,25 @@
   IMPLEMENT_BUILTIN_V_VPJ (NAME, double8, int8, int4, int4, lo, hi)           \
   IMPLEMENT_BUILTIN_V_VPJ (NAME, double16, int16, int8, int8, lo, hi))
 
+// Half overloads only: used when the float and double versions stay on libclc.
+#define DEFINE_BUILTIN_V_VPJ_F16ONLY(NAME)                                    \
+  __IF_FP16 (                                                                 \
+  half _CL_OVERLOADABLE _CL_READNONE NAME (half a, int __private *c)          \
+  {                                                                           \
+    __private int d;                                                          \
+    __private float r = __builtin_##NAME##f16 (a, &d);                        \
+    *c = d;                                                                   \
+    return r;                                                                 \
+  }                                                                           \
+  IMPLEMENT_BUILTIN_V_VPJ_ADDRSPACE (NAME, half, int, __local)                \
+  IMPLEMENT_BUILTIN_V_VPJ_ADDRSPACE (NAME, half, int, __global)               \
+  IF_GEN_AS(IMPLEMENT_BUILTIN_V_VPJ_ADDRSPACE (NAME, half, int, __generic))   \
+  IMPLEMENT_BUILTIN_V_VPJ (NAME, half2, int2, int, int, lo, hi)               \
+  IMPLEMENT_BUILTIN_V_VPJ (NAME, half3, int3, int2, int, lo, s2)              \
+  IMPLEMENT_BUILTIN_V_VPJ (NAME, half4, int4, int2, int2, lo, hi)             \
+  IMPLEMENT_BUILTIN_V_VPJ (NAME, half8, int8, int4, int4, lo, hi)             \
+  IMPLEMENT_BUILTIN_V_VPJ (NAME, half16, int16, int8, int8, lo, hi))
+
 #define __SINGLE_WI                             \
     if (get_local_id(0) == 0 &&                 \
         get_local_id(1) == 0 &&                 \

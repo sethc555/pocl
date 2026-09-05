@@ -253,10 +253,15 @@ list(APPEND SOURCES_WITH_SLEEF "host/addrspace_operators.ll" "host/addrspace_ope
 # this makes vectorization of (some) OpenCL builtins possible,
 # while also making FP16 versions available (if FP16 is available)
 if(ENABLE_HOST_CPU_VECTORIZE_BUILTINS) # implies CONFORMANCE=OFF
+  # float and double frexp stay on libclc: with LLVM 23 the llvm.frexp
+  # intrinsic inside libclc's double pown/rootn/powr gives wrong results (NaN,
+  # 0, inf) for a large share of inputs at vector widths 3 to 8; the
+  # scalar-typed path, LLVM 22 and the ENABLE_CONFORMANCE build are correct.
+  # libclc's frexp is exact. The half overloads still come from the Clang
+  # builtin (frexp_f16.cl), which libclc does not provide.
   list(REMOVE_ITEM SOURCES_WITH_SLEEF
     libclc-pocl/cos.cl
     libclc-pocl/cosh.cl
-    libclc-pocl/frexp.cl
     libclc-pocl/isinf.cl
     libclc-pocl/isnan.cl
     libclc-pocl/isfinite.cl
@@ -297,6 +302,7 @@ if(ENABLE_HOST_CPU_VECTORIZE_BUILTINS) # implies CONFORMANCE=OFF
     )
 
   list(APPEND SOURCES_WITH_SLEEF
+    frexp_f16.cl
     acos.cl
     asin.cl
     atan.cl
@@ -316,8 +322,6 @@ if(ENABLE_HOST_CPU_VECTORIZE_BUILTINS) # implies CONFORMANCE=OFF
     fmax.cl
     fmin.cl
     floor.cl
-    frexp.cl
-
     isfinite.cl
     isinf.cl
     isnan.cl
